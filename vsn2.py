@@ -19,6 +19,7 @@ from typing import Optional
 
 import numpy as np
 from scipy.optimize import minimize
+from scipy.stats import rankdata
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -434,24 +435,23 @@ def vsn_ml(v: VsnInput) -> VsnResult:
     """Fit VSN parameters by maximum likelihood using L-BFGS-B.
 
     Corresponds to R's vsnML() which calls the C vsn2_optim routine.
-    """
-    p0 = v.pstart.flatten(order="C")  # initial parameters
 
+    Parameter layout (flat vector passed to optimizer):
+        par[:ns]  = offsets a_{s,j}     (column-major over strata×samples)
+        par[ns:]  = log-scales b_{s,j}
+    where ns = n_strata * n_cols for 'affine', or 1 for 'none'.
+    """
     istrat = _calc_istrat(v)
     ns = len(istrat) - 1
 
-    # Unpack p0 into (a, log_b) for ns strata
-    # pstart shape: (n_strata, d2, 2)  — [:,:,0] = offsets, [:,:,1] = log-scales
-    # After flattening col-major to match C, the first ns entries are offsets, next ns are log-scales
-    # We rebuild p from pstart directly to match the C convention
     nr, nc = v.x.shape
     nrs = v.n_strata()
 
-    # For 'affine': ns = nrs * nc; for 'none': ns = 1
-    # par layout used in C: par[s + j*nrs] = a_{s,j}, par[s + j*nrs + nrs*nc] = log_b_{s,j}
+    # Build flat parameter vector in column-major (stratum-major) order matching C
+    # pstart shape: (n_strata, d2, 2)  [:,:,0]=offsets, [:,:,1]=log-scales
     if v.calib == "affine":
         a_init = v.pstart[:, :, 0].flatten(order="F")  # (nrs*nc,)
-        b_init = v.pstart[:, :, 1].flatten(order="F")  # (nrs*nc,)
+        b_init = v.pstart[:, :, 1].flatten(order="F")
     else:
         a_init = v.pstart[:, :, 0].flatten()
         b_init = v.pstart[:, :, 1].flatten()
@@ -473,49 +473,39 @@ def vsn_ml(v: VsnInput) -> VsnResult:
     # Bounds: offsets are unbounded; log-scale parameters are in [-100, 100]
     bounds = [(None, None)] * ns + [(-100.0, 100.0)] * ns
 
-    # We need sigsq to flow through gradient; use a mutable container
-    sigsq_state = [np.nan]
-    mu_state = [None]
+    # Cache for mu/sigsq (computed as side-effect of each likelihood evaluation)
+    sigsq_state: list = [np.nan]
+    mu_state: list = [None]
 
     def _negloglik(par):
-        ll, grad = _negloglik_and_grad(
-            par, v.x, istrat, ref_mu, ref_sigsq, profiling
-        )
-        # cache sigsq and mu for later retrieval
+        ll, g = _negloglik_and_grad(par, v.x, istrat, ref_mu, ref_sigsq, profiling)
         if profiling:
-            # re-derive sigsq from current par (already computed inside, but we need it)
-            # simplest: recompute quickly
+            # Recompute mu and sigsq at this parameter value for caching.
+            # This mirrors the internal computation in _negloglik_and_grad.
             a_ = par[:ns]
-            b_ = par[ns:]
-            bjs = np.exp(b_)
+            b_ = np.exp(par[ns:])
             y_flat = v.x.flatten(order="F")
-            ly = np.full(nr * nc, np.nan)
             asly = np.full(nr * nc, np.nan)
             for jj in range(ns):
-                start = istrat[jj]
-                end = istrat[jj + 1]
-                chunk = y_flat[start:end]
+                s, e = istrat[jj], istrat[jj + 1]
+                chunk = y_flat[s:e]
                 valid = ~np.isnan(chunk)
-                z = bjs[jj] * chunk[valid] + a_[jj]
-                idx_valid = np.where(valid)[0] + start
-                ly[idx_valid] = z
-                asly[idx_valid] = np.arcsinh(z)
+                if np.any(valid):
+                    z = b_[jj] * chunk[valid] + a_[jj]
+                    idx_v = np.where(valid)[0] + s
+                    asly[idx_v] = np.arcsinh(z)
             asly_mat = asly.reshape((nr, nc), order="F")
             _mu = np.nanmean(asly_mat, axis=1)
             resid = asly_mat - _mu[:, np.newaxis]
             ntot = int(np.sum(~np.isnan(v.x)))
             sigsq_state[0] = float(np.nansum(resid**2) / ntot)
             mu_state[0] = _mu
-        return ll
-
-    def _grad(par):
-        _, grad = _negloglik_and_grad(par, v.x, istrat, ref_mu, ref_sigsq, profiling)
-        return grad
+        return ll, g
 
     result = minimize(
         _negloglik,
         p0,
-        jac=_grad,
+        jac=True,
         method="L-BFGS-B",
         bounds=bounds,
         options={
@@ -528,8 +518,7 @@ def vsn_ml(v: VsnInput) -> VsnResult:
 
     fail = 0 if result.success else result.status
 
-    # Retrieve final sigsq / mu
-    # Run one final evaluation to get them at the optimal point
+    # Run one final evaluation at the optimum to populate mu/sigsq caches
     _negloglik(result.x)
     final_sigsq = sigsq_state[0] if profiling else ref_sigsq  # type: ignore[assignment]
     final_mu = mu_state[0] if profiling else ref_mu  # type: ignore[assignment]
@@ -623,9 +612,13 @@ def vsn_lts(v: VsnInput) -> VsnResult:
 
         # Select rows within quantile, per stratum × intensity-slice
         n_slices = 5
-        # rank hmean (NaN last)
+        # Reproduce R's rank(hmean, na.last=TRUE): 1-based, average ties, NaN last
         rank_hmean = _rank_na_last(hmean)
-        slice_labels = np.floor(rank_hmean / (len(hmean) / n_slices)).astype(int)
+        n_total = len(hmean)
+        # Reproduce R's cut(rank, breaks=n_slices): map 1-based rank to slice 0..4
+        # R cut creates n_slices equal-width intervals over the rank range.
+        # rank r → slice floor((r - 1) / (n_total / n_slices)), clipped to [0, n_slices-1]
+        slice_labels = np.floor((rank_hmean - 1) / (n_total / n_slices)).astype(int)
         slice_labels = np.clip(slice_labels, 0, n_slices - 1)
 
         nrs = int(np.max(intstrata))
@@ -662,16 +655,25 @@ def _replace_pstart(v: VsnInput, coef: np.ndarray) -> VsnInput:
 
 
 def _rank_na_last(x: np.ndarray) -> np.ndarray:
-    """Rank array (0-based), placing NaN at the end (highest ranks)."""
+    """Reproduce R's rank(x, na.last=TRUE) with average ties.
+
+    Non-NaN values are ranked 1..n_valid using average for ties.
+    NaN values are assigned sequential ranks n_valid+1, n_valid+2, ...
+    in their order of appearance, matching R's na.last=TRUE behaviour.
+    """
     n = len(x)
-    out = np.empty(n)
     nan_mask = np.isnan(x)
-    valid_idx = np.where(~nan_mask)[0]
-    order = valid_idx[np.argsort(x[valid_idx])]
-    ranks = np.empty(len(order))
-    ranks[np.argsort(order)] = np.arange(len(order))
-    out[~nan_mask] = ranks
-    out[nan_mask] = np.arange(np.sum(nan_mask)) + np.sum(~nan_mask)
+    n_valid = int(np.sum(~nan_mask))
+
+    out = np.empty(n)
+    valid_vals = x[~nan_mask]
+    # scipy rankdata uses average ties and 1-based ranks — same as R default
+    out[~nan_mask] = rankdata(valid_vals, method="average")
+
+    # NaNs get successive ranks beyond the valid range, in order of appearance
+    for k, idx in enumerate(np.where(nan_mask)[0]):
+        out[idx] = n_valid + 1 + k
+
     return out
 
 
@@ -741,22 +743,39 @@ def vsn2_trsf(
 
 
 def pstart_heuristic(x: np.ndarray, sp: dict, calib: str) -> np.ndarray:
-    """Return starting parameters: offsets=0, log-scales=1.
+    """Compute starting parameters for the VSN optimizer.
+
+    Initialises offset a=0 and log-scale b=log(1/mean(y_col)) per column per
+    stratum, so that exp(b)*y has unit scale at the starting point.  This keeps
+    the gradient magnitude small and allows scipy's L-BFGS-B to navigate the
+    likelihood surface reliably.
 
     Parameters
     ----------
     x : (nr, nc) data matrix
-    sp : dict mapping stratum label → row indices
+    sp : dict mapping stratum label → row indices (0-based)
     calib : 'affine' or 'none'
 
     Returns
     -------
-    pstart : (n_strata, d2, 2)  with [:,:,0]=0, [:,:,1]=1
+    pstart : (n_strata, d2, 2)  with [:,:,0]=offset=0, [:,:,1]=log-scale
     """
     d2 = x.shape[1] if calib == "affine" else 1
     n_strata = len(sp)
     pstart = np.zeros((n_strata, d2, 2))
-    pstart[:, :, 1] = 1.0
+
+    if calib == "affine":
+        for s_idx, (label, row_idx) in enumerate(sp.items()):
+            x_sub = x[row_idx, :]
+            col_means = np.nanmean(x_sub, axis=0)
+            col_means = np.where(col_means > 0, col_means, 1.0)
+            # b = log(1/mean) so that exp(b)*y ≈ 1 near the mean
+            pstart[s_idx, :, 1] = -np.log(col_means)
+    else:
+        overall_mean = np.nanmean(x)
+        if overall_mean > 0:
+            pstart[:, :, 1] = -np.log(overall_mean)
+
     return pstart
 
 

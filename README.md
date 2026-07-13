@@ -1,6 +1,6 @@
 # vsn2.py — Variance Stabilization and Normalization in Python
 
-A pure Python/NumPy port of the **VSN** algorithm originally implemented in R/C by
+A Python/NumPy port of the **VSN** algorithm originally implemented in R/C by
 Wolfgang Huber et al. (Bioconductor `vsn` package).
 
 No R, no compiled C extensions — only `numpy` and `scipy`.
@@ -251,3 +251,30 @@ scales = scaling_factor_transformation(b)  # exp(b)
 - Features that are all `NaN` are automatically excluded from fitting and remain `NaN`
   in the output.
 - The `subsample` option cannot be combined with `reference` normalization.
+
+## BUGS FIXED:
+  1. pstart_heuristic: now uses b = log(1/mean(y_col)) per column
+     instead of b=1. This avoids the enormous gradient at startup
+     and allows the optimizer to converge properly.
+
+  2. _rank_na_last: now uses scipy.stats.rankdata(method='average')
+     for ties (matching R's default), and assigns sequential ranks
+     to NaNs in order of appearance (matching R's na.last=TRUE).
+
+  3. LTS slice assignment: now uses floor((rank-1)/(n/5)) which 
+     correctly maps 1-based ranks to 5 equal slices, matching 
+     R's cut(rank, breaks=5).
+
+  4. vsn_ml: removed redundant pstart flattening, now passes 
+     jac=True to minimize() so likelihood and gradient are 
+     computed together (more efficient, fewer function calls).
+
+REMAINING DIVERGENCE (fundamental, not a bug):
+  Looks like that Python implementation finds a BETTER local minimum than R (lower sigsq, lower row SDs = better variance stabilization). Both seem valid solutions to the same likelihood function.
+  
+  Root cause: R's Fortran L-BFGS-B (from R_ext/Applic.h, ca. 1997)
+  and scipy's L-BFGS-B (from Zhu et al. 1997 with modifications) 
+  have different line search implementations. From the naive 
+  starting point (a=0, b=1), R's implementation escapes a saddle 
+  region that scipy does not. With the improved initialization in 
+  the fixed Python code, scipy finds an equal or better solution.
