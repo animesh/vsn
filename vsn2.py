@@ -510,6 +510,7 @@ def vsn_ml(v: VsnInput) -> VsnResult:
         bounds=bounds,
         options={
             "maxiter": opar["maxit"],
+            "maxcor": 5,
             "ftol": opar["factr"] * np.finfo(float).eps,
             "gtol": opar["pgtol"],
             "iprint": opar["trace"] - 1 if opar["trace"] > 0 else -1,
@@ -608,17 +609,20 @@ def vsn_lts(v: VsnInput) -> VsnResult:
                     tmp[whsel] = rsv.mu
                 rsv.mu = tmp
 
-        rvar = np.nansum((hy - hmean[:, np.newaxis]) ** 2, axis=1)
+        squared_residuals = (hy - hmean[:, np.newaxis]) ** 2
+        rvar = np.sum(squared_residuals, axis=1)
 
         # Select rows within quantile, per stratum × intensity-slice
         n_slices = 5
         # Reproduce R's rank(hmean, na.last=TRUE): 1-based, average ties, NaN last
         rank_hmean = _rank_na_last(hmean)
-        n_total = len(hmean)
-        # Reproduce R's cut(rank, breaks=n_slices): map 1-based rank to slice 0..4
-        # R cut creates n_slices equal-width intervals over the rank range.
-        # rank r → slice floor((r - 1) / (n_total / n_slices)), clipped to [0, n_slices-1]
-        slice_labels = np.floor((rank_hmean - 1) / (n_total / n_slices)).astype(int)
+        rank_min = float(np.min(rank_hmean))
+        rank_max = float(np.max(rank_hmean))
+        rank_span = rank_max - rank_min
+        cut_min = rank_min - rank_span * 0.001
+        cut_max = rank_max + rank_span * 0.001
+        cut_breaks = np.linspace(cut_min, cut_max, n_slices + 1)
+        slice_labels = np.searchsorted(cut_breaks, rank_hmean, side="left") - 1
         slice_labels = np.clip(slice_labels, 0, n_slices - 1)
 
         nrs = int(np.max(intstrata))
@@ -743,39 +747,10 @@ def vsn2_trsf(
 
 
 def pstart_heuristic(x: np.ndarray, sp: dict, calib: str) -> np.ndarray:
-    """Compute starting parameters for the VSN optimizer.
-
-    Initialises offset a=0 and log-scale b=log(1/mean(y_col)) per column per
-    stratum, so that exp(b)*y has unit scale at the starting point.  This keeps
-    the gradient magnitude small and allows scipy's L-BFGS-B to navigate the
-    likelihood surface reliably.
-
-    Parameters
-    ----------
-    x : (nr, nc) data matrix
-    sp : dict mapping stratum label → row indices (0-based)
-    calib : 'affine' or 'none'
-
-    Returns
-    -------
-    pstart : (n_strata, d2, 2)  with [:,:,0]=offset=0, [:,:,1]=log-scale
-    """
+    """Match R pstartHeuristic: offsets=0 and log-scale parameters=1."""
     d2 = x.shape[1] if calib == "affine" else 1
-    n_strata = len(sp)
-    pstart = np.zeros((n_strata, d2, 2))
-
-    if calib == "affine":
-        for s_idx, (label, row_idx) in enumerate(sp.items()):
-            x_sub = x[row_idx, :]
-            col_means = np.nanmean(x_sub, axis=0)
-            col_means = np.where(col_means > 0, col_means, 1.0)
-            # b = log(1/mean) so that exp(b)*y ≈ 1 near the mean
-            pstart[s_idx, :, 1] = -np.log(col_means)
-    else:
-        overall_mean = np.nanmean(x)
-        if overall_mean > 0:
-            pstart[:, :, 1] = -np.log(overall_mean)
-
+    pstart = np.zeros((len(sp), d2, 2), dtype=float)
+    pstart[:, :, 1] = 1.0
     return pstart
 
 

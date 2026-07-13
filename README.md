@@ -1,46 +1,37 @@
 # vsn2.py — Variance Stabilization and Normalization in Python
 
-A Python/NumPy port of the **VSN** algorithm originally implemented in R/C by
-Wolfgang Huber et al. (Bioconductor `vsn` package).
+A Python/NumPy port of the **VSN** algorithm originally implemented in R/C by Wolfgang Huber et al. (Bioconductor `vsn` package).
 
 No R, no compiled C extensions — only `numpy` and `scipy`.
 
----
+------------------------------------------------------------------------
 
 ## Background
 
-VSN fits a generalized log (asinh) transformation to expression data so that the
-per-feature standard deviation is approximately constant across the intensity range.
-It simultaneously estimates per-sample calibration parameters (offset and scale) and
-the transformation, making it robust to differences in overall signal level between
-samples.
+VSN fits a generalized log (asinh) transformation to expression data so that the per-feature standard deviation is approximately constant across the intensity range. It simultaneously estimates per-sample calibration parameters (offset and scale) and the transformation, making it robust to differences in overall signal level between samples.
 
-**Reference:**
-> Huber W, von Heydebreck A, Sültmann H, Poustka A, Vingron M. (2002)
-> *Variance stabilization applied to microarray data calibration and to the
-> quantification of differential expression.*
-> Bioinformatics **18**(suppl 1), S96–S104.
+**Reference:** \> Huber W, von Heydebreck A, Sültmann H, Poustka A, Vingron M. (2002) \> *Variance stabilization applied to microarray data calibration and to the \> quantification of differential expression.* \> Bioinformatics **18**(suppl 1), S96–S104.
 
----
+------------------------------------------------------------------------
 
 ## Requirements
 
-```
+```         
 numpy
 scipy
 ```
 
 Install with:
 
-```bash
+``` bash
 pip install numpy scipy
 ```
 
----
+------------------------------------------------------------------------
 
 ## Quick Start
 
-```python
+``` python
 import numpy as np
 from vsn2 import vsn_matrix
 
@@ -51,7 +42,7 @@ result = vsn_matrix(x)
 hx = result.hx          # shape (n_features, n_samples)
 ```
 
----
+------------------------------------------------------------------------
 
 ## How It Works
 
@@ -59,12 +50,9 @@ The transformation applied to each value is:
 
 $$h(y) = \frac{\text{arcsinh}(e^b \cdot y + a)}{\ln 2} - \text{hoffset}$$
 
-where `a` (offset) and `b` (log-scale) are fitted per sample (and per stratum if
-provided). The parameters are estimated by maximum profile likelihood using the
-**L-BFGS-B** optimizer, wrapped in a **Least Trimmed Squares (LTS)** robustness
-loop that iteratively downweights high-residual features.
+where `a` (offset) and `b` (log-scale) are fitted per sample (and per stratum if provided). The parameters are estimated by maximum profile likelihood using the **L-BFGS-B** optimizer, wrapped in a **Least Trimmed Squares (LTS)** robustness loop that iteratively downweights high-residual features.
 
----
+------------------------------------------------------------------------
 
 ## API Reference
 
@@ -72,7 +60,7 @@ loop that iteratively downweights high-residual features.
 
 The main entry point.
 
-```python
+``` python
 vsn_matrix(
     x,
     reference=None,
@@ -90,7 +78,7 @@ vsn_matrix(
 ```
 
 | Parameter | Type | Default | Description |
-|---|---|---|---|
+|------------------|------------------|------------------|------------------|
 | `x` | `ndarray (nr, nc)` | — | Expression matrix: rows = features, cols = samples |
 | `reference` | `VsnResult` or `None` | `None` | Normalize against a pre-fitted reference |
 | `strata` | `ndarray (nr,)` int or `None` | `None` | Per-row stratum labels (1-based integers covering 1…n) |
@@ -106,14 +94,14 @@ vsn_matrix(
 
 **Returns:** `VsnResult`
 
----
+------------------------------------------------------------------------
 
 ### `VsnResult`
 
 Stores the fitted model.
 
 | Attribute | Type | Description |
-|---|---|---|
+|------------------------|------------------------|------------------------|
 | `.hx` | `ndarray (nr, nc)` | Variance-stabilized data (log2-like scale) |
 | `.coefficients` | `ndarray (n_strata, nc, 2)` | Fitted parameters: `[:,:,0]` = offsets, `[:,:,1]` = log-scales |
 | `.mu` | `ndarray (nr,)` | Row means in transformed space |
@@ -122,14 +110,14 @@ Stores the fitted model.
 | `.lbfgsb` | `int` | Optimizer return code (0 = success) |
 | `.calib` | `str` | Calibration mode used |
 
----
+------------------------------------------------------------------------
 
 ### Optimizer parameters (`optimpar`)
 
 Pass as a dict to `optimpar=`. Keys use underscores in place of R's dots.
 
 | Key | Default | Description |
-|---|---|---|
+|------------------------|------------------------|------------------------|
 | `factr` | `5e7` | L-BFGS-B stopping tolerance factor (lower = stricter) |
 | `pgtol` | `2e-4` | Projected gradient tolerance |
 | `maxit` | `60000` | Maximum optimizer iterations |
@@ -137,13 +125,13 @@ Pass as a dict to `optimpar=`. Keys use underscores in place of R's dots.
 | `cvg_niter` | `7` | Maximum LTS outer iterations |
 | `cvg_eps` | `0.0` | Convergence threshold on max change in `hx` (0 = disabled) |
 
----
+------------------------------------------------------------------------
 
 ## Usage Examples
 
 ### Basic normalization
 
-```python
+``` python
 import numpy as np
 from vsn2 import vsn_matrix
 
@@ -161,7 +149,7 @@ hx = result.hx  # (500, 6) variance-stabilized matrix
 
 ### Normalize new data against a fitted reference
 
-```python
+``` python
 # Fit on a training set
 ref = vsn_matrix(X_train, return_data=False)
 
@@ -180,7 +168,7 @@ hx_new = vsn2_trsf(
 
 ### Using strata (e.g. spatial blocks on an array)
 
-```python
+``` python
 import numpy as np
 from vsn2 import vsn_matrix
 
@@ -192,7 +180,7 @@ result = vsn_matrix(X, strata=strata, calib="affine")
 
 ### Apply the transformation directly
 
-```python
+``` python
 from vsn2 import vsn2_trsf
 import numpy as np
 
@@ -207,7 +195,7 @@ hx = vsn2_trsf(
 
 ### Scaling factor helper
 
-```python
+``` python
 from vsn2 import scaling_factor_transformation
 import numpy as np
 
@@ -215,12 +203,12 @@ b = result.coefficients[0, :, 1]   # log-scale parameters for stratum 0
 scales = scaling_factor_transformation(b)  # exp(b)
 ```
 
----
+------------------------------------------------------------------------
 
 ## What Was Ported
 
 | Original (R / C) | Python equivalent |
-|---|---|
+|------------------------------------|------------------------------------|
 | S4 class `vsn` | `VsnResult` dataclass |
 | S4 class `vsnInput` | `VsnInput` dataclass |
 | C `loglik` / `grad_loglik` | `_negloglik_and_grad()` — pure NumPy |
@@ -241,40 +229,96 @@ scales = scaling_factor_transformation(b)  # exp(b)
 | R `rowV` | `row_variances()` |
 | R `calibCharToInt` | `_calib_to_int()` |
 
----
+------------------------------------------------------------------------
 
 ## Notes
 
 - `optimpar` keys use underscores (`cvg_niter`, `cvg_eps`) instead of R's dots.
-- The `calib="none"` mode fits a single global transform (no per-sample calibration);
-  it requires a `reference` or at least 2 columns.
-- Features that are all `NaN` are automatically excluded from fitting and remain `NaN`
-  in the output.
+- The `calib="none"` mode fits a single global transform (no per-sample calibration); it requires a `reference` or at least 2 columns.
+- Features that are all `NaN` are automatically excluded from fitting and remain `NaN` in the output.
 - The `subsample` option cannot be combined with `reference` normalization.
 
 ## BUGS FIXED:
-  1. pstart_heuristic: now uses b = log(1/mean(y_col)) per column
-     instead of b=1. This avoids the enormous gradient at startup
-     and allows the optimizer to converge properly.
 
-  2. _rank_na_last: now uses scipy.stats.rankdata(method='average')
-     for ties (matching R's default), and assigns sequential ranks
-     to NaNs in order of appearance (matching R's na.last=TRUE).
+main discrepancies were:
 
-  3. LTS slice assignment: now uses floor((rank-1)/(n/5)) which 
-     correctly maps 1-based ranks to 5 equal slices, matching 
-     R's cut(rank, breaks=5).
+- Python used np.nansum() for LTS residuals, but R uses rowSums() without na.rm=TRUE. Rows containing any missing sample must therefore receive NA residual variance.
+- SciPy used 10 L-BFGS corrections by default, while vsn2.c explicitly sets lmm=5.
+- Python’s intensity-slice calculation did not exactly reproduce cut(rank(hmean, na.last=TRUE), breaks=5).
+- pstartHeuristic() must use offsets 0 and log-scale parameters 1, exactly as implemented in R.
 
-  4. vsn_ml: removed redundant pstart flattening, now passes 
-     jac=True to minimize() so likelihood and gradient are 
-     computed together (more efficient, fewer function calls).
+## run.py: generic VSN2 runner
 
-REMAINING DIVERGENCE (fundamental, not a bug):
-  Looks like that Python implementation finds a BETTER local minimum than R (lower sigsq, lower row SDs = better variance stabilization). Both seem valid solutions to the same likelihood function.
-  
-  Root cause: R's Fortran L-BFGS-B (from R_ext/Applic.h, ca. 1997)
-  and scipy's L-BFGS-B (from Zhu et al. 1997 with modifications) 
-  have different line search implementations. From the naive 
-  starting point (a=0, b=1), R's implementation escapes a saddle 
-  region that scipy does not. With the improved initialization in 
-  the fixed Python code, scipy finds an equal or better solution.
+`python run.py input.tsv output.tsv --id-columns "Protein.Group,Protein.Names,Genes" --intensity-columns "Sample1,Sample2,Sample3,Sample4"`
+
+For the DIA-NN matrix: `python run.py "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsv" --id-columns "Protein.Group,Protein.Names,Genes,First.Protein.Description,N.Sequences,N.Proteotypic.Sequences" --intensity-regex "^F:" report.pg.vsn2.tsv`
+
+Explicit names: --id-columns "ID1,ID2" --intensity-columns "Sample1,Sample2,Sample3"
+
+Regular expressions: --id-regex "\^Protein" --intensity-regex "\^Intensity\_" --intensity-regex "\^Control\_" --intensity-regex "\^Treatment\_"
+
+Supports CSV and TSV input. Preserves specified ID columns. Returns only ID columns followed by VSN-transformed intensity columns. Converts blank, infinite and nonnumeric intensity entries to NA. Treats zero as missing by default, matching your R workflow. Use --keep-zero to transform zeros instead. Preserves nonmissing values in partially missing rows. Writes fitted parameters to
+
+<output>
+
+.vsn2_parameters.csv. Requires at least two intensity columns.
+
+## compare.py: generic VSN2 run.py comparison script
+
+`python compare.py "report.pg.vsn2.tsv" "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsvLFQvsn0.250.5Rem20Groups.txtLFQvsnF..promec.TIMSTOF.LARS.2026.260518_Sonali.260518_Sonali_CorTestBH.csv"`
+
+Optional row-level differences: --details-output "vsn_comparison_by_sample.csv" \^ --differences-output "vsn_differences_by_row.csv"
+
+It reports: Matched intensity columns Compared finite values Overall RMSE Overall MAE Overall mean difference Maximum absolute error Per-sample Pearson correlation Per-sample R-squared Missing-value counts
+
+## run_and_compare.py: generic VSN2 runner and comparison script
+
+```         
+python run_and_compare.py "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsv" "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsvLFQvsn0.250.5Rem20Groups.txtLFQvsnF..promec.TIMSTOF.LARS.2026.260518_Sonali.260518_Sonali_CorTestBH.csv" --python-output "python_vsn_matched_samples.tsv"
+vsn2: 10991 x 20 matrix (1 stratum).
+L:\promec\Animesh\Download\vsn\vsn2.py:890: UserWarning: 1584 rows were removed since they contained only NA elements.
+  warnings.warn(f"{num_na} rows were removed since they contained only NA elements.")
+Please use a mean-SD plot to verify the fit.
+
+Generated Python VSN2 values
+rows: 10991
+id_columns: 6
+intensity_columns: 20
+rows_all_missing_in_selected_intensities: 1584
+finite_input_values: 133623
+finite_output_values: 133623
+optimizer_return_code: 0
+output: python_vsn_matched_samples.tsv
+parameters: python_vsn_matched_samples.vsn2_parameters.csv
+
+Comparison with R output
+Rows in each file: 10991
+Matched intensity columns: 20
+Compared finite values: 133623
+Overall RMSE: 0.000431713355128
+Overall MAE: 0.000262345883364
+Overall mean difference (Python - R): 1.55570290982e-05
+Overall maximum absolute error: 0.00155267994017
+Unmatched Python numeric columns: 2
+Unmatched R intensity columns: 0
+Per-sample details: vsn_matched_comparison_by_sample.csv
+
+The saved Python output can be compared again later with:
+python compare.py "python_vsn_matched_samples.tsv" "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsvLFQvsn0.250.5Rem20Groups.txtLFQvsnF..promec.TIMSTOF.LARS.2026.260518_Sonali.260518_Sonali_CorTestBH.csv"
+```
+
+### check
+
+```         
+python compare.py "python_vsn_matched_samples.tsv" "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsvLFQvsn0.250.5Rem20Groups.txtLFQvsnF..promec.TIMSTOF.LARS.2026.260518_Sonali.260518_Sonali_CorTestBH.csv"
+Rows in each file: 10991
+Matched intensity columns: 20
+Compared finite values: 133623
+Overall RMSE: 0.000431713355128
+Overall MAE: 0.000262345883364
+Overall mean difference (Python - R): 1.55570290982e-05
+Overall maximum absolute error: 0.00155267994017
+Unmatched Python numeric columns: 2
+Unmatched R intensity columns: 0
+Per-sample details: vsn_output_comparison_by_sample.csv
+```
