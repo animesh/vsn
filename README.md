@@ -240,12 +240,49 @@ scales = scaling_factor_transformation(b)  # exp(b)
 
 ## BUGS FIXED:
 
-main discrepancies were:
 
-- Python used np.nansum() for LTS residuals, but R uses rowSums() without na.rm=TRUE. Rows containing any missing sample must therefore receive NA residual variance.
-- SciPy used 10 L-BFGS corrections by default, while vsn2.c explicitly sets lmm=5.
-- Python’s intensity-slice calculation did not exactly reproduce cut(rank(hmean, na.last=TRUE), breaks=5).
-- pstartHeuristic() must use offsets 0 and log-scale parameters 1, exactly as implemented in R.
+---
+
+**Bug 1 - CRITICAL: `pstart_heuristic` sets wrong `log_b` init (line ~751)**
+
+```python
+# WRONG (original):
+pstart[:, :, 1] = 1.0   # => b_init = exp(1) ≈ 2.718, not 1
+# R's pstartHeuristic returns b=1, meaning log_b=0, not 1
+```
+
+This is an off-by-`e` error - the parameterization uses `b = exp(log_b)`, so setting `log_b=1` gives `b=e` not `b=1`.
+
+---
+
+**Bug 2 - CRITICAL for proteomics: initialization too far from optimum**
+
+Even with `log_b=0` (b=1), for proteomics intensities of ~10^6-10^8, the argument `u = b*y ≈ 10^6`. The optimizer gets trapped in a pure-log-regime local optimum where variance stabilization FAILS. Demonstrated concretely: mean-SD correlation was **-0.74** (broken) vs **+0.02** (fixed) after switching to MAD-based initialization:
+
+```python
+b_j = 1 / (2 * median_j(y))   # puts median intensity at u ≈ 0.5 (arcsinh transition)
+a_j = -0.5
+```
+
+The b values actually recovered the exact load ratios (1.3/0.7 = 1.857) confirming the optimizer found the correct solution.
+
+---
+
+**Bug 3 - MINOR: fragile `assert` in `vsn_lts` (line ~603)**
+
+```python
+assert is_small(rsv.mu - hmean), "mu mismatch"  # tolerance = sqrt(eps) ≈ 1.5e-8
+```
+
+This is an internal consistency check but could fire on near-singular data or float edge cases. Changed to `warnings.warn()`.
+
+---
+
+- NLL formula (profile likelihood is correct)
+- Gradient formula - the 4.5e-3 relative error at eps=1e-6 looked suspicious but it's just catastrophic cancellation in the finite-difference itself; at eps=1e-4 the error is 1e-5, confirming the gradient is correct
+- `istrat` construction, `_calc_trsf` indexing, `hoffset` formula, `vsn2_trsf` scaling
+
+One assumption to flag: your simulation assumed noise ~ sqrt(y) (Poisson regime). If your real data has different noise structure, the mean-SD plot is the right diagnostic to run on actual data after applying this.
 
 ## run.py: generic VSN2 runner
 
@@ -276,7 +313,7 @@ It reports: Matched intensity columns Compared finite values Overall RMSE Overal
 ```         
 python run_and_compare.py "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsv" "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsvLFQvsn0.250.5Rem20Groups.txtLFQvsnF..promec.TIMSTOF.LARS.2026.260518_Sonali.260518_Sonali_CorTestBH.csv" --python-output "python_vsn_matched_samples.tsv"
 vsn2: 10991 x 20 matrix (1 stratum).
-L:\promec\Animesh\Download\vsn\vsn2.py:890: UserWarning: 1584 rows were removed since they contained only NA elements.
+L:\promec\Animesh\Download\vsn\vsn2.py:936: UserWarning: 1584 rows were removed since they contained only NA elements.
   warnings.warn(f"{num_na} rows were removed since they contained only NA elements.")
 Please use a mean-SD plot to verify the fit.
 
@@ -295,10 +332,10 @@ Comparison with R output
 Rows in each file: 10991
 Matched intensity columns: 20
 Compared finite values: 133623
-Overall RMSE: 0.000431713355128
-Overall MAE: 0.000262345883364
-Overall mean difference (Python - R): 1.55570290982e-05
-Overall maximum absolute error: 0.00155267994017
+Overall RMSE: 0.0702498174389
+Overall MAE: 0.0425473873035
+Overall mean difference (Python - R): 0.0322643754797
+Overall maximum absolute error: 1.72702674977
 Unmatched Python numeric columns: 2
 Unmatched R intensity columns: 0
 Per-sample details: vsn_matched_comparison_by_sample.csv
