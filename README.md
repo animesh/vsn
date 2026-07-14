@@ -359,3 +359,147 @@ Unmatched Python numeric columns: 2
 Unmatched R intensity columns: 0
 Per-sample details: vsn_output_comparison_by_sample.csv
 ```
+
+## run.r: generic VSN2 R script
+
+```         
+Rscript run.r proteinGroups.txt "LFQ"
+
+[1] "USAGE:<path to>Rscript diffExprTestCor.r <complete path to proteinGroups.txt> and <intensity columns to consider>"
+[1] "supplied argument(s): 2"
+[1] ".\\proteinGroups.txt" "LFQ"
+  [1] "Protein.IDs"
+  [2] "Majority.protein.IDs"
+  [3] "Peptide.counts..all."
+  [4] "Peptide.counts..razor.unique."
+  [5] "Peptide.counts..unique."
+  [6] "Protein.names"
+  [7] "Gene.names"
+  [8] "Fasta.headers"
+  [9] "Number.of.proteins"
+ [10] "Peptides"
+ [11] "Razor...unique.peptides"
+ [12] "Unique.peptides"
+ [13] "Library.indices"
+ [14] "Majority.library.index"
+ ...
+ LFQ.intensity.l50_100spd_OT_1ulirt_S2.C2_1_6365
+ Min.   :  3855
+ 1st Qu.: 31665
+ Median : 52601
+ Mean   : 74927
+ 3rd Qu.:138800
+ Max.   :156300
+ NA's   :1
+Warning message:
+Removed 2 rows containing missing values or values outside the scale range (`geom_line()`).
+Warning message:
+Removed 2 rows containing missing values or values outside the scale range (`geom_line()`).
+```         
+
+
+## run.qmd: generic quarto script using shiny server
+
+```         
+quarto serve run.qmd                                                                                                                             
+Loading required namespace: shiny
+
+
+processing file: run.qmd
+1/27
+2/27 [unnamed-chunk-1] 
+3/27
+4/27 [unnamed-chunk-2] 
+5/27
+6/27 [unnamed-chunk-3] 
+7/27
+8/27 [unnamed-chunk-4]
+9/27
+10/27 [unnamed-chunk-5]
+11/27
+12/27 [unnamed-chunk-6]
+13/27
+14/27 [unnamed-chunk-7]
+15/27
+16/27 [unnamed-chunk-8]
+17/27
+18/27 [unnamed-chunk-9]
+19/27
+20/27 [unnamed-chunk-10]
+21/27
+22/27 [unnamed-chunk-11]
+23/27
+24/27 [unnamed-chunk-12]
+25/27
+26/27 [unnamed-chunk-13]
+27/27
+output file: run.knit.md
+
+pandoc 
+  to: html
+  output-file: run.html
+  standalone: true
+  section-divs: true
+  html-math-method: mathjax
+  wrap: none
+  default-image-extension: png
+  toc: true
+  variables: {}
+
+metadata
+  document-css: false
+  link-citations: true
+  date-format: long
+  lang: en
+  engines:
+    - path: c:\Users\animeshs\Positron\resources\app\quarto\share\extension-subtrees\julia-engine\_extensions\julia-engine\julia-engine.js
+  title: Variance Stabilizing Normalization (VSN)
+  server:
+    type: shiny
+  theme: cosmo
+
+Loading required package: shiny
+Warning: package 'shiny' was built under R version 4.5.1
+Loading required package: Biobase
+Loading required package: BiocGenerics
+Loading required package: generics
+
+Attaching package: 'generics'
+
+The following objects are masked from 'package:base':
+
+    as.difftime, as.factor, as.ordered, intersect, is.element, setdiff,
+    setequal, union
+
+
+Attaching package: 'BiocGenerics'
+
+The following objects are masked from 'package:stats':
+
+    IQR, mad, sd, var, xtabs
+
+The following objects are masked from 'package:base':
+
+    anyDuplicated, aperm, append, as.data.frame, basename, cbind,
+    colnames, dirname, do.call, duplicated, eval, evalq, Filter, Find,
+    get, grep, grepl, is.unsorted, lapply, Map, mapply, match, mget,
+    order, paste, pmax, pmax.int, pmin, pmin.int, Position, rank,
+    rbind, Reduce, rownames, sapply, saveRDS, table, tapply, unique,
+    unsplit, which.max, which.min
+
+Welcome to Bioconductor
+
+    Vignettes contain introductory material; view with
+    'browseVignettes()'. To cite Bioconductor, see
+    'citation("Biobase")', and for packages 'citation("pkgname")'.
+
+Warning: package 'DT' was built under R version 4.5.1
+
+Attaching package: 'DT'
+
+The following objects are masked from 'package:shiny':
+
+    dataTableOutput, renderDataTable
+
+Browse at http://localhost:6601/
+```         
