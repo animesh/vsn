@@ -400,39 +400,38 @@ Removed 2 rows containing missing values or values outside the scale range (`geo
 
 ## run.qmd: generic quarto script using shiny server
 
+hosted at [posit-cloud](https://fuzzylife-vsn.share.connect.posit.cloud/), for local serve 
 ```         
-quarto serve run.qmd                                                                                                                             
+quarto serve run.qmd                                                                                                                      
+
 Loading required namespace: shiny
 
 
 processing file: run.qmd
-1/27
-2/27 [unnamed-chunk-1] 
-3/27
-4/27 [unnamed-chunk-2] 
-5/27
-6/27 [unnamed-chunk-3] 
-7/27
-8/27 [unnamed-chunk-4]
-9/27
-10/27 [unnamed-chunk-5]
-11/27
-12/27 [unnamed-chunk-6]
-13/27
-14/27 [unnamed-chunk-7]
-15/27
-16/27 [unnamed-chunk-8]
-17/27
-18/27 [unnamed-chunk-9]
-19/27
-20/27 [unnamed-chunk-10]
-21/27
-22/27 [unnamed-chunk-11]
-23/27
-24/27 [unnamed-chunk-12]
-25/27
-26/27 [unnamed-chunk-13]
-27/27
+1/24
+2/24 [unnamed-chunk-1]
+3/24 [unnamed-chunk-2] 
+4/24
+5/24 [unnamed-chunk-3]
+6/24
+7/24 [unnamed-chunk-4]
+8/24
+9/24 [unnamed-chunk-5]
+10/24
+11/24 [unnamed-chunk-6]
+12/24
+13/24 [unnamed-chunk-7]
+14/24
+15/24 [unnamed-chunk-8]
+16/24
+17/24 [unnamed-chunk-9]
+18/24
+19/24 [unnamed-chunk-10]
+20/24
+21/24 [unnamed-chunk-11]
+22/24 [unnamed-chunk-12]
+23/24 [unnamed-chunk-13]
+24/24
 output file: run.knit.md
 
 pandoc 
@@ -501,5 +500,5 @@ The following objects are masked from 'package:shiny':
 
     dataTableOutput, renderDataTable
 
-Browse at http://localhost:6601/
+Browse at http://localhost:6486/
 ```         

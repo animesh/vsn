@@ -10,31 +10,33 @@ execute:
   warning: false
   message: false
 ---
-
 ```{r}
 #| context: setup
-
+#sudo apt install r-base-core libclang-dev libcurl4-openssl-dev
+#wget "https://download2.rstudio.org/server/jammy/amd64/rstudio-server-2026.07.0-139-amd64.deb"
+#sudo dpkg -i rstudio-server-2026.07.0-139-amd64.deb
+#sudo apt install  --fix-broken
+#install.packages(c("BiocManager","DT","shiny","curl","rsconnect"))
+#BiocManager::install(c("vsn"))
+#https://docs.posit.co/connect-cloud/how-to/r/dependencies.html
+#rsconnect::writeManifest(contentCategory = "site")
+#ℹ Capturing R dependencies
+#✔ Found 64 dependencies
 library(shiny)
 library(vsn)
 library(DT)
-
 options(
   shiny.maxRequestSize = 500 * 1024^2
 )
-
 ```
-
 ```{r}
 #| context: setup
-
 read_input <- function(path, filename){
-
     sep <-
         if(grepl("\\.csv$", filename, ignore.case = TRUE))
             ","
         else
             "\t"
-
     read.table(
         path,
         sep = sep,
@@ -44,43 +46,28 @@ read_input <- function(path, filename){
         stringsAsFactors = FALSE,
         check.names = FALSE
     )
-
 }
-
 find_intensity_columns <- function(df, pattern){
-
     grep(
         pattern,
         names(df),
         value = TRUE
     )
-
 }
-
 build_matrix <- function(df, cols){
-
     x <- as.matrix(df[, cols, drop = FALSE])
-
     x[x == 0] <- NA
-
     storage.mode(x) <- "double"
-
     x
-
 }
-
 build_metadata <- function(df, intensity_cols){
-
     df[
         ,
         setdiff(names(df), intensity_cols),
         drop = FALSE
     ]
-
 }
-
 encode_row_names <- function(mat, meta){
-
     rownames(mat) <-
         apply(
             meta,
@@ -88,13 +75,9 @@ encode_row_names <- function(mat, meta){
             paste,
             collapse=";_;"
         )
-
     mat
-
 }
-
 decode_metadata <- function(mat, meta_names){
-
     meta <-
         as.data.frame(
             do.call(
@@ -106,21 +89,13 @@ decode_metadata <- function(mat, meta_names){
             ),
             stringsAsFactors = FALSE
         )
-
     names(meta) <- meta_names
-
     meta
-
 }
-
 ```
-
 # VSN Dashboard
-
 ::: {.layout-sidebar}
-
 ```{r}
-
 fileInput(
     "file",
     "proteinGroups.txt / report.tsv",
@@ -130,142 +105,94 @@ fileInput(
         ".csv"
     )
 )
-
 textInput(
     "pattern",
     "Intensity column pattern",
     value="LFQ"
 )
-
 actionButton(
     "run",
     "Run VSN",
     class="btn-primary"
 )
-
 hr()
-
 downloadButton(
     "download",
     "Download normalized table"
 )
-
 ```
-
 :::
-
 ## Dataset summary
-
 ```{r}
-
 verbatimTextOutput("summary")
-
 ```
-
 ## Raw intensity distribution
-
 ```{r}
-
 plotOutput(
     "rawbox",
     height="450px"
 )
-
 ```
-
 ## Mean-SD plot
-
 ```{r}
-
 plotOutput(
     "meansd",
     height="450px"
 )
-
 ```
-
 ## Mean-SD plot (ranks = FALSE)
-
 ```{r}
-
 plotOutput(
     "meansd2",
     height="450px"
 )
-
 ```
-
 ## Histogram
-
 ```{r}
-
 plotOutput(
     "histogram",
     height="350px"
 )
-
 ```
-
 ## Boxplot after VSN
-
 ```{r}
-
 plotOutput(
     "vsnbox",
     height="450px"
 )
-
 ```
-
 ## Sample regression
-
 ```{r}
-
 selectInput(
     "sample",
     "Sample",
     choices=NULL
 )
-
 plotOutput(
     "regression",
     height="550px"
 )
-
 ```
-
 ## Normalized table
-
 ```{r}
-
 DT::dataTableOutput("table")
-
 ```
-
 ```{r}
 #| context: server
-
 rawData <- reactive({
-
     req(input$file)
-
     read_input(
         input$file$datapath,
         input$file$name
     )
-
 })
-
 observe({
-
     req(rawData())
-
     cols <-
         find_intensity_columns(
             rawData(),
             input$pattern
         )
-
     updateSelectInput(
         session,
         "sample",
@@ -276,71 +203,57 @@ observe({
             else
                 character(0)
     )
-
 })
-
 vsnData <- eventReactive(input$run,{
-
     df <- rawData()
-
     intensity_cols <-
         find_intensity_columns(
             df,
             input$pattern
         )
-
     validate(
         need(
             length(intensity_cols) > 0,
             "No matching intensity columns found."
         )
     )
-
     IntVST <-
         build_matrix(
             df,
             intensity_cols
         )
-
     metaData <-
         build_metadata(
             df,
             intensity_cols
         )
-
     IntVST <-
         encode_row_names(
             IntVST,
             metaData
         )
-
     LFQvsn <-
         justvsn(
             IntVST,
             minDataPointsPerStratum = 0
         )
-
     colnames(LFQvsn) <-
         paste0(
             "vsn_",
             colnames(IntVST)
         )
-
     pow2LFQvsn <-
         2^LFQvsn
-
     colnames(pow2LFQvsn) <-
         paste0(
             "pow2_",
             colnames(IntVST)
         )
-
     recoveredMeta <-
         decode_metadata(
             LFQvsn,
             names(metaData)
         )
-
     exportTable <-
         cbind(
             recoveredMeta,
@@ -348,109 +261,67 @@ vsnData <- eventReactive(input$run,{
             LFQvsn,
             pow2LFQvsn
         )
-
     list(
-
         raw = IntVST,
-
         meta = recoveredMeta,
-
         vsn = LFQvsn,
-
         pow2 = pow2LFQvsn,
-
         export = exportTable,
-
         intensity_columns = intensity_cols
-
     )
-
 })
-
 output$summary <- renderPrint({
-
     req(rawData())
-
     df <- rawData()
-
     intensity_cols <-
         find_intensity_columns(
             df,
             input$pattern
         )
-
     cat(
         "Rows:",
         nrow(df),
         "\n"
     )
-
     cat(
         "Columns:",
         ncol(df),
         "\n"
     )
-
     cat(
         "Intensity columns:",
         length(intensity_cols),
         "\n\n"
     )
-
     if(length(intensity_cols))
         print(intensity_cols)
-
 })
-
 output$download <- downloadHandler(
-
     filename=function(){
-
         paste0(
-
             tools::file_path_sans_ext(
                 input$file$name
             ),
-
             ".",
-
             input$pattern,
-
             ".vsn.txt"
-
         )
-
     },
-
     content=function(file){
-
         write.table(
-
             vsnData()$export,
-
             file=file,
-
             sep="\t",
-
             quote=FALSE,
-
             row.names=FALSE
-
         )
-
     }
-
 )
-
 ```
-
 ```{r}
 #| context: server
-
 output$rawbox <- renderPlot({
-
     req(vsnData())
-
     boxplot(
         log2(vsnData()$raw),
         las = 2,
@@ -458,47 +329,31 @@ output$rawbox <- renderPlot({
         main = "Raw log2 Intensities",
         ylab = "log2(Intensity)"
     )
-
 })
-
 output$meansd <- renderPlot({
-
     req(vsnData())
-
     meanSdPlot(
         vsnData()$vsn
     )
-
 })
-
 output$meansd2 <- renderPlot({
-
     req(vsnData())
-
     meanSdPlot(
         vsnData()$vsn,
         ranks = FALSE
     )
-
 })
-
 output$histogram <- renderPlot({
-
     req(vsnData())
-
     hist(
         as.numeric(vsnData()$vsn),
         breaks = 60,
         main = "Distribution of VSN values",
         xlab = "VSN"
     )
-
 })
-
 output$vsnbox <- renderPlot({
-
     req(vsnData())
-
     boxplot(
         vsnData()$vsn,
         las = 2,
@@ -506,39 +361,27 @@ output$vsnbox <- renderPlot({
         main = "VSN Normalized Intensities",
         ylab = "VSN"
     )
-
 })
-
 output$regression <- renderPlot({
-
     req(vsnData())
     req(input$sample)
-
     idx <- match(
         input$sample,
         colnames(vsnData()$raw)
     )
-
     validate(
         need(!is.na(idx), "Please choose a sample.")
     )
-
     x <- log2(vsnData()$raw[, idx])
     y <- vsnData()$vsn[, idx]
-
     keep <- complete.cases(x, y)
-
     x <- x[keep]
     y <- y[keep]
-
     validate(
         need(length(x) > 5, "Not enough valid observations.")
     )
-
     fit <- lm(y ~ x)
-
     s <- summary(fit)
-
     plot(
         x,
         y,
@@ -548,13 +391,11 @@ output$regression <- renderPlot({
         ylab = colnames(vsnData()$vsn)[idx],
         main = paste("VSN vs log2:", input$sample)
     )
-
     abline(
         fit,
         col = "blue",
         lwd = 2
     )
-
     legend(
         "topleft",
         bty = "n",
@@ -564,39 +405,23 @@ output$regression <- renderPlot({
             paste0("Slope = ", round(coef(fit)[2], 4))
         )
     )
-
 })
-
 output$table <- DT::renderDataTable({
-
     req(vsnData())
-
     DT::datatable(
-
         vsnData()$export,
-
         extensions = c("Buttons"),
-
         options = list(
-
             pageLength = 20,
-
             scrollX = TRUE,
-
             dom = "Blfrtip",
-
             buttons = c(
                 "copy",
                 "csv",
                 "excel"
             )
-
         ),
-
         rownames = FALSE
-
     )
-
 })
-
 ```
