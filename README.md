@@ -54,6 +54,88 @@ where `a` (offset) and `b` (log-scale) are fitted per sample (and per stratum if
 
 ------------------------------------------------------------------------
 
+## R C code vs Python, diff function by function
+
+1. NLL formula (vsn2.c loglik vs Python _negloglik_and_grad)
+R vsn2.c:
+  jac1 += log(1.0+z*z);  jac2 += ni*log(bj);   jacobian = jac1*0.5 - jac2;
+  sigsq = ssq/nt;  residuals = nt/2.0;
+  ll = nt/2*log(2π*sigsq) + nt/2 + jacobian;
+
+Python:
+  jac1 += np.sum(np.log(1.0 + z**2));  jac2 += np.sum(valid)*np.log(bj)
+  jacobian = 0.5*jac1 - jac2;  sigsq = ssq/nt;  residuals = nt/2.0
+  ll = nt/2*log(2π*sigsq) + nt/2 + jacobian
+
+2. Gradient (vsn2.c grad_loglik vs Python)
+R vsn2.c:
+  z = resid[k]/sigsq + ma[k]*ly[k]    # (r/σ² + m*u)
+  sa += z * ma[k]                      # Σ (r/σ² + m*u)*m = Σ r*m/σ² + m²*u
+  sb += z * ma[k] * y[k]              # Σ (r/σ² + m*u)*m*y
+  gr[j]       = sa
+  gr[j+nrs]   = exp(b[j]) * (sb - nj/exp(b[j]))
+
+Python:
+  z   = rv*rfac + mv*lyv               # same
+  sa  = sum(z * mv)                    # same
+  sb  = sum(z * mv * yv)               # same
+  grad[j]    = sa
+  grad[j+ns] = exp(b[j]) * (sb - nj/bj)
+
+3. pstart heuristic
+R pstartHeuristic:   pstart[,,2] = 1   → log_b = 1 → b = exp(1) ≈ 2.718
+Python pstart_heuristic: pstart[:,:,1] = 1.0 → same
+
+4. hoffset
+R:  hoffset = log2(2 * scalingFactorTransformation(rowMeans(cof[,,2])))
+    scalingFactorTransformation(b) = exp(b)   [vsn2.c FUN macro]
+    → log2(2 * exp(mean(log_b)))
+
+Python: log2(2 * exp(nanmean(cof[:,:,1], axis=1)))
+(rowMeans=nanmean only differs if coefficients have NaN)
+
+5. L-BFGS-B settings
+R vsn2.c:   lmm=5, factr=5e7, pgtol=2e-4, maxit=60000, bounds:a=unbounded, b=[-100,100]
+Python:  maxcor=5, factr*eps for ftol, gtol=pgtol=2e-4, maxiter=60000, bounds: same
+
+6. LTS slicing - ACTUAL DIFFERENCE FOUND
+R vsnLTS:
+  facslice = cut(rank(hmean, na.last=TRUE), breaks=5)
+  grquantile = tapply(rvar, list(facslice, facstrata), quantile, probs=0.9, na.rm=TRUE)
+  whsel = which( (rvar <= grquantile[cbind(slice,intstrata)]) | (slice==1) )
+
+  'cut(x, breaks=5)' uses RIGHT-CLOSED intervals: (a,b]
+  The LOWEST element is included in the first interval (special case).
+  
+  Boundary values (exact bin edges) go to the UPPER bin in R.
+
+Python _rank_na_last + np.searchsorted:
+  np.searchsorted(cut_breaks, rank_hmean, side='left') - 1
+  This uses LEFT-CLOSED intervals: [a,b)
+  Boundary values go to the LOWER bin in Python.
+
+BOUNDARY HANDLING DIFFERS
+  Values exactly on a bin boundary are assigned to DIFFERENT slices.
+  In practice: affects ~0-5 proteins per LTS iteration.
+  Cumulative over 7 iterations: slightly different whsel → different fitted params.
+
+7. quantile method
+R:   quantile(x, probs=0.9, na.rm=TRUE, type=7)  [R default type]
+NumPy: np.nanquantile(x, 0.9)  [uses linear interp = R type 7]
+
+8. rowMeans NA handling during rvar
+R:   rvar = rowSums((hy - hmean)^2)   [na.rm=FALSE by default → NaN propagates]
+Py:  rvar = np.sum((hy - hmean[:,None])**2, axis=1) [NaN propagates too]
+
+SUMMARY
+ONE substantive algorithmic difference:
+  R cut() RIGHT-CLOSED intervals vs Python LEFT-CLOSED (searchsorted)
+  → slightly different slice assignments for values exactly on bin boundaries
+  → different LTS selection over 7 iterations
+  → slightly different final (a,b) parameters → RMSE ≈ 0.0004
+
+NLL, gradient, pstart, hoffset, L-BFGS-B settings same
+
 ## API Reference
 
 ### `vsn_matrix`
@@ -360,6 +442,8 @@ Unmatched R intensity columns: 0
 Per-sample details: vsn_output_comparison_by_sample.csv
 ```
 
+Looks like the ~0.000432 RMSE is irreducible without matching R's cut() boundary convention but quality of variance stabilization (mean-SD corr 0.019 = R's 0.019)
+
 ## run.r: generic VSN2 R script
 
 ```         
@@ -400,7 +484,7 @@ Removed 2 rows containing missing values or values outside the scale range (`geo
 
 ## run.qmd: generic quarto script using shiny server
 
-hosted at [posit-cloud](https://fuzzylife-vsn.share.connect.posit.cloud/), for local serve 
+hosted at [posit-cloud](https://fuzzylife-vsn.share.connect.posit.cloud/), for serving locally try
 ```         
 quarto serve run.qmd                                                                                                                      
 
@@ -501,4 +585,20 @@ The following objects are masked from 'package:shiny':
     dataTableOutput, renderDataTable
 
 Browse at http://localhost:6486/
+```         
+
+## vsn2mo.py: marimo notebook script using shiny server
+
+```
+uv run marimo run vsn2mo.py 
+This notebook has inlined package dependencies.
+Run in a sandboxed venv containing this notebook's dependencies? [Y/n]: 
+Running in a sandbox: /home/animeshs/.local/bin/uv run --isolated --no-project --compile-bytecode --with-requirements /tmp/tmpq0ilqsa0.txt --python >=3.13 marimo run vsn2mo.py
+
+        Running vsn2mo.py ⚡
+
+        ➜  URL: http://localhost:2718
+
+        💡 Tip: Pair-program with AI agents on running notebooks
+                Guide: https://links.marimo.app/marimo-pair
 ```         
