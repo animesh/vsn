@@ -320,51 +320,187 @@ scales = scaling_factor_transformation(b)  # exp(b)
 - Features that are all `NaN` are automatically excluded from fitting and remain `NaN` in the output.
 - The `subsample` option cannot be combined with `reference` normalization.
 
-## BUGS FIXED:
+## BUGS in vsn2mo.py vs correct vsn2.py + R notebook
 
+BUG 1 [CRITICAL - wrong scale]: predict() missing /log(2)
+  Line 78: return res - self.hoffset
+  Should:  return res / np.log(2) - self.hoffset
+  Effect:  output in raw arcsinh units (~32-35) not log2 scale (~6-22)
+  Visible: Image 2 x-axis 32-35 instead of expected 17-22
 
----
+BUG 2 [CRITICAL - wrong math]: NLL formula is wrong
+  Line 149: nll = 0.5 * nc * np.nansum(np.log(ss)) - np.nansum(log_jac)
+  This is: sum_over_rows(log(per_row_SS)) * nc/2  -- sum-of-logs
+  vsn2.c:  nt/2 * log(total_SSQ/nt) + nt/2 + jacobian  -- log-of-sum
+  These are mathematically different objectives.
 
-**Bug 1 - CRITICAL: `pstart_heuristic` sets wrong `log_b` init (line ~751)**
+BUG 3 [CRITICAL - wrong math]: Gradient uses per-row weights
+  Line 165: dnll_dy = nc * res[:, j] / ss   (ss is per-row vector)
+  vsn2.c:   rfac = 1.0 / sigsq              (sigsq is scalar total variance)
+  Effect:   optimizer walks a different loss surface, wrong parameters.
 
-```python
-# WRONG (original):
-pstart[:, :, 1] = 1.0   # => b_init = exp(1) ≈ 2.718, not 1
-# R's pstartHeuristic returns b=1, meaning log_b=0, not 1
+BUG 4 [CRITICAL - missing]: No LTS robustification
+  The marimo vsn_sample calls minimize() exactly ONCE.
+  R's vsnLTS runs 7 iterations, trimming bottom-10%% rows each time.
+  Effect:   non-robust fit, outlier proteins distort normalization.
+
+BUG 5 [significant]: pstart_heuristic uses 1/median instead of exp(1)
+  Line 109: b_init = 1.0 / (np.nanmedian(col_valid) + 1e-8)
+  Correct:  log_b = 1.0  →  b = exp(1) ≈ 2.718  (matches R pstartHeuristic)
+  Effect:   optimizer starts in wrong basin → RMSE=0.07 vs R (proven earlier).
+
+BUG 6 [significant]: hoffset uses arithmetic mean of b, not geometric mean
+  Line 280-281: b_mean = np.nanmean(b_vals); hoffset = log2(2*b_mean)
+  R vsn2.c:     hoffset = log2(2 * exp(mean(log_b)))  = log2(2*geomean(b))
+  These differ when b values vary across columns.
+
+BUG 7 [wrong]: log_jac formula mixes parameterizations
+  Line 143: log_jac = log(|b|) - 0.5*log(1+u^2)
+  The vsn_obj_func bounds enforce b>1e-10 (b is scale, not log_b)
+  But hoffset/predict treat b as already exponential.
+  vsn2.c uses log_b as parameter: jacobian = 0.5*Σlog(1+u²) - Σnj*log_b_j
+
+BUG 8 [visual]: Diagnostics mean-SD plot uses raw mean on x-axis
+  R's meanSdPlot() default (ranks=TRUE) uses rank(rowMean) on x-axis.
+  Marimo uses actual mean value. Minor but doesn't match R output.
+
+BUGS CAUSING THE VISIBLE PROBLEMS:
+  Image 2 x-axis 32-35 → Bug 1 (missing /log(2)) + Bug 5 (wrong init)
+  Spike in running median at high end → Bugs 2,3,4 (wrong loss surface, no LTS)
+
+## BUGS in vsn2mo.py fixed 
+
+Bug 1 [CRITICAL - WRONG NLL]:
+  vsn2mo.py line 149:
+    nll = 0.5 * nc * np.nansum(np.log(ss))  - np.nansum(log_jac)
+    # ss = per-ROW sum-of-squares; logs them individually then sums
+  Correct (vsn2.c loglik):
+    nll = (nt/2)*log(2π*SSQ/nt) + nt/2 + jacobian
+    # SSQ = TOTAL sum of squares across all rows; single log
+
+Bug 2 [CRITICAL - WRONG GRADIENT]:
+  vsn2mo.py line 165:
+    dnll_dy = nc * res[:, j] / ss    # ss is per-row, shape (nr,)
+  Correct (vsn2.c grad_loglik):
+    rfac = 1/sigsq   # sigsq = SSQ/nt (scalar)
+    z = r*rfac + ma*ly   # (r/σ² + m*u)
+    grad_a = sum(z*ma); grad_logb = exp(b)*(sum(z*ma*y) - nj/exp(b))
+
+Bug 3 [CRITICAL - WRONG LOG_B PARAMETERIZATION]:
+  vsn2mo.py lines 143, 163:
+    log_jac[:, j] = np.log(np.abs(b) + 1e-12) - 0.5*np.log(1+val**2)
+    dlog_db = 1.0/(b+1e-12) - x[:,j]*val/(1+val**2)
+    # b is bounded > 1e-10 directly, optimizer treats it as raw scale
+  Correct (vsn2.c FUN macro):
+    b_param = log_b  (unconstrained, bounded -100..100)
+    b = exp(b_param)
+    jac2 = n_j * b_param  # n_j * log(b) = n_j * log_b
+    grad_logb = exp(b_param) * (sb - nj/exp(b_param))
+
+Bug 4 [CRITICAL - WRONG PSTART]:
+  vsn2mo.py line 109:
+    b_init = 1.0 / (np.nanmedian(col_valid) + 1e-8)  # MAD-based, WRONG
+  Correct (R pstartHeuristic):
+    pstart[:,:,1] = 1.0   # log_b = 1 → b = exp(1) ≈ 2.718
+
+Bug 5 [CRITICAL - WRONG HOFFSET]:
+  vsn2mo.py lines 280-281:
+    b_mean = np.nanmean(b_vals)           # arithmetic mean of b
+    res.hoffset = np.log2(2.0 * b_mean)  # log2(2*mean(b)) WRONG
+  Correct (R vsnMatrix):
+    hoffset = log2(2 * scalingFactorTransformation(mean(log_b)))
+            = log2(2 * exp(mean(log_b)))  # geometric mean of b
+
+Bug 6 [CRITICAL - MISSING /log(2) IN PREDICT]:
+  vsn2mo.py line 78:
+    return res - self.hoffset     # res = arcsinh(a + b*x), no /log(2)!
+  Correct (R vsn2trsf with hoffset):
+    hx = arcsinh(a + exp(log_b)*x)
+    hx = hx / log(2) - hoffset     # divide by log(2) → log2 scale
+
+Bug 7 [NO LTS ITERATIONS]:
+  vsn2mo.py: single L-BFGS-B call, no robust LTS loop
+  Correct (R vsnLTS): 7 iterations, each time trimming 10% worst-residual rows
+
+Bug 8 [WRONG MEAN-SD PLOT X-AXIS]:
+  vsn2mo.py line 383:
+    _row_means = np.nanmean(normalized_mat, axis=1)  # actual values on x-axis
+  Correct R meanSdPlot(ranks=TRUE):
+    x-axis = rank(rowMeans) / n   # ranks normalized to [0,1]
+
+Net effect of Bugs 5+6: output scale is arcsinh(b*x) - log2(2*mean(b))
+instead of arcsinh(b*x)/log(2) - log2(2*exp(mean(log_b)))
+This shifts values by ~22 log2 units → explains 32-35 range in plot
+
+## Issues still with manifest.json generated with https://docs.posit.co/connect-cloud/how-to/r/dependencies.html
+
+Auto deployment via positron failed again because the system could not download the **`BiocGenerics`** package from Bioconductor. The specific HTTP **404 (Not Found)** error was returned when attempting to fetch:
+
+```
+https://bioconductor.org/packages/3.21/books/src/contrib/BiocGenerics_0.54.0.tar.gz
 ```
 
-This is an off-by-`e` error - the parameterization uses `b = exp(log_b)`, so setting `log_b=1` gives `b=e` not `b=1`.
+### Root Cause
+There are **two related problems**:
+
+1. **Wrong Bioconductor repository path** — The URL contains `/books/` in the path, but `BiocGenerics` is a **software** package, not a book. The correct URL should use `/bioc/` instead:
+   ```
+   # Incorrect (404)
+   .../packages/3.21/books/src/contrib/BiocGenerics_0.54.0.tar.gz
+
+   # Correct
+   .../packages/3.21/bioc/src/contrib/BiocGenerics_0.54.0.tar.gz
+   ```
+check https://bioconductor.org/packages/release/bioc/html/BiocGenerics.html
+
+2. **Content type mismatch** — The logs also warn that the project was published as `quarto-static` but the `manifest.json` declares it as `quarto-shiny`. This suggests the manifest may be outdated or misconfigured.
 
 ---
 
-**Bug 2 - CRITICAL for proteomics: initialization too far from optimum**
+## Suggested Fixes
 
-Even with `log_b=0` (b=1), for proteomics intensities of ~10^6-10^8, the argument `u = b*y ≈ 10^6`. The optimizer gets trapped in a pure-log-regime local optimum where variance stabilization FAILS. Demonstrated concretely: mean-SD correlation was **-0.74** (broken) vs **+0.02** (fixed) after switching to MAD-based initialization:
+### 1. Fix the `manifest.json` or `renv.lock`
+Check how `BiocGenerics` is referenced in your `manifest.json` or `renv.lock` and correct the repository URL:
 
-```python
-b_j = 1 / (2 * median_j(y))   # puts median intensity at u ≈ 0.5 (arcsinh transition)
-a_j = -0.5
+```json
+// In renv.lock, ensure the source is correct:
+"BiocGenerics": {
+  "Package": "BiocGenerics",
+  "Version": "0.54.0",
+  "Source": "Bioconductor",
+  "Repository": "https://bioconductor.org/packages/3.21/bioc"
+}
 ```
 
-The b values actually recovered the exact load ratios (1.3/0.7 = 1.857) confirming the optimizer found the correct solution.
+### 2. Regenerate the Manifest Locally
+Regenerate your deployment manifest to ensure correct package sources are captured:
 
----
-
-**Bug 3 - MINOR: fragile `assert` in `vsn_lts` (line ~603)**
-
-```python
-assert is_small(rsv.mu - hmean), "mu mismatch"  # tolerance = sqrt(eps) ≈ 1.5e-8
+```r
+# In R, from your project directory:
+renv::snapshot()
+# or
+rsconnect::writeManifest()
 ```
 
-This is an internal consistency check but could fire on near-singular data or float edge cases. Changed to `warnings.warn()`.
+### 3. Fix the Content Type Mismatch
+Align your `manifest.json` content type with what you're actually deploying. If it is a Shiny app, set:
 
----
+```json
+{
+  "metadata": {
+    "appmode": "quarto-shiny"
+  }
+}
+```
 
-- NLL formula (profile likelihood is correct)
-- Gradient formula - the 4.5e-3 relative error at eps=1e-6 looked suspicious but it's just catastrophic cancellation in the finite-difference itself; at eps=1e-4 the error is 1e-5, confirming the gradient is correct
-- `istrat` construction, `_calc_trsf` indexing, `hoffset` formula, `vsn2_trsf` scaling
+### 4. Verify Bioconductor Version Compatibility
+Ensure Bioconductor 3.21 is compatible with your R version:
 
-One assumption to flag: your simulation assumed noise ~ sqrt(y) (Poisson regime). If your real data has different noise structure, the mean-SD plot is the right diagnostic to run on actual data after applying this.
+```r
+BiocManager::version()        # Check current version
+BiocManager::valid()          # Check for inconsistencies
+```
+
 
 ## run.py: generic VSN2 runner
 
@@ -589,6 +725,7 @@ Browse at http://localhost:6486/
 
 ## vsn2mo.py: marimo notebook script using shiny server
 
+hosted at [molab-wasm-page](https://molab.marimo.io/github/animesh/vsn/blob/master/vsn2mo.py/wasm), for serving locally try
 ```
 uv run marimo run vsn2mo.py 
 This notebook has inlined package dependencies.

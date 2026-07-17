@@ -98,7 +98,7 @@ decode_metadata <- function(mat, meta_names){
 ```{r}
 fileInput(
     "file",
-    "proteinGroups.txt / report.tsv",
+    label = HTML("proteinGroups.txt / report.tsv/ csv-file <p>(e.g. <a href='https://zenodo.org/records/14557756/files/proteinGroups.txt?download=1' target='_blank'>file</a>, details in <a href='https://fuzzylife.substack.com/p/proteomics-data-processing-with-maxquant' target='_blank'>Proteomics data processing with MaxQuant</a>)"),
     accept=c(
         ".txt",
         ".tsv",
