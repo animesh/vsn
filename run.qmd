@@ -49,7 +49,7 @@ read_input <- function(path, filename){
 }
 find_intensity_columns <- function(df, pattern){
     grep(
-        pattern,
+        paste0("^",pattern),
         names(df),
         value = TRUE
     )

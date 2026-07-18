@@ -12,7 +12,6 @@
 #server edit: animeshs@ubuntu:~/scripts$ uv run marimo edit vsn2mo.py --host 0.0.0.0 --port 2718
 #http://10.20.93.118:2718?access_token=-qW8IZTi3PwgFHbAErqa3Q
 
-
 import marimo
 
 __generated_with = "0.23.9"
@@ -202,7 +201,7 @@ def _(minimize, np, rankdata, warnings):
                     hy[valid, j] = np.arcsinh(u)
 
             hmean = np.nanmean(hy, axis=1)                      # (nr,)
-            rvar  = np.nansum((hy - hmean[:, np.newaxis]) ** 2, axis=1)  # (nr,)
+            rvar  = np.sum((hy - hmean[:, np.newaxis]) ** 2, axis=1)    # np.sum not nansum: NaN must propagate to match R rowSums(na.rm=FALSE)  # (nr,)
 
             # LTS row selection: 5 intensity slices, keep lts_quantile of each
             # (matches R vsnLTS: cut(rank(hmean), breaks=5) + tapply quantile)
