@@ -513,7 +513,6 @@ def vsn_ml(v: VsnInput) -> VsnResult:
             "maxcor": 5,
             "ftol": opar["factr"] * np.finfo(float).eps,
             "gtol": opar["pgtol"],
-            "iprint": opar["trace"] - 1 if opar["trace"] > 0 else -1,
         },
     )
 
@@ -619,9 +618,15 @@ def vsn_lts(v: VsnInput) -> VsnResult:
         rank_min = float(np.min(rank_hmean))
         rank_max = float(np.max(rank_hmean))
         rank_span = rank_max - rank_min
-        cut_min = rank_min - rank_span * 0.001
-        cut_max = rank_max + rank_span * 0.001
-        cut_breaks = np.linspace(cut_min, cut_max, n_slices + 1)
+
+        # Match R's cut(rank_hmean, breaks=n_slices) exactly. When breaks is
+        # a scalar, R first creates equally spaced breaks over [min, max] and
+        # then expands only the two outer endpoints by 0.1% of the range.
+        # Expanding the range before linspace shifts every internal boundary,
+        # which changes the sparse-data LTS selection.
+        cut_breaks = np.linspace(rank_min, rank_max, n_slices + 1)
+        cut_breaks[0] -= rank_span * 0.001
+        cut_breaks[-1] += rank_span * 0.001
         slice_labels = np.searchsorted(cut_breaks, rank_hmean, side="left") - 1
         slice_labels = np.clip(slice_labels, 0, n_slices - 1)
 
@@ -1059,3 +1064,82 @@ def vsn_matrix(
         print("Please use a mean-SD plot to verify the fit.")
 
     return res
+
+
+def justvsn(
+    x: np.ndarray,
+    reference: Optional[VsnResult] = None,
+    strata: Optional[np.ndarray] = None,
+    lts_quantile: float = 0.9,
+    subsample: int = 0,
+    verbose: bool = False,
+    calib: str = "affine",
+    pstart: Optional[np.ndarray] = None,
+    min_data_points_per_stratum: int = 42,
+    optimpar: Optional[dict] = None,
+    defaultpar: Optional[dict] = None,
+) -> np.ndarray:
+    """Fit VSN and return only the transformed matrix.
+
+    This is the Python convenience equivalent of R's ``vsn::justvsn()``.
+    It calls :func:`vsn_matrix` with ``return_data=True`` and returns the
+    resulting ``hx`` matrix instead of the full :class:`VsnResult` object.
+
+    Parameters
+    ----------
+    x : array-like
+        Numeric matrix with features in rows and samples in columns. Missing
+        observations must be represented by ``np.nan``.
+    reference : VsnResult or None
+        Optional fitted reference transformation.
+    strata : array-like or None
+        Optional one-based integer stratum labels, one per row.
+    lts_quantile : float, default 0.9
+        Fraction retained by least-trimmed-squares fitting.
+    subsample : int, default 0
+        Rows sampled per stratum. Zero uses all rows.
+    verbose : bool, default False
+        Print fitting diagnostics.
+    calib : {"affine", "none"}, default "affine"
+        Calibration model.
+    pstart : array-like or None
+        Optional starting coefficients.
+    min_data_points_per_stratum : int, default 42
+        Minimum rows required per stratum.
+    optimpar : dict or None
+        Overrides selected optimizer parameters.
+    defaultpar : dict or None
+        Overrides the default optimizer dictionary.
+
+    Returns
+    -------
+    numpy.ndarray
+        Float64 VSN-transformed matrix with the same shape and missing-value
+        positions as ``x``.
+
+    Notes
+    -----
+    This function does not treat zero as missing automatically. Convert zeros
+    to ``np.nan`` before calling it when zero means an undetected intensity.
+    Use :func:`vsn_matrix` when fitted coefficients or optimizer diagnostics
+    are also required.
+    """
+    result = vsn_matrix(
+        x=x,
+        reference=reference,
+        strata=strata,
+        lts_quantile=lts_quantile,
+        subsample=subsample,
+        verbose=verbose,
+        return_data=True,
+        calib=calib,
+        pstart=pstart,
+        min_data_points_per_stratum=min_data_points_per_stratum,
+        optimpar=optimpar,
+        defaultpar=defaultpar,
+    )
+
+    if result.hx is None:
+        raise RuntimeError("VSN fitting completed without transformed data.")
+
+    return np.asarray(result.hx, dtype=np.float64)

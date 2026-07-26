@@ -1,14 +1,14 @@
-#python run.py "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsv" --id-columns "Protein.Group,Protein.Names,Genes,First.Protein.Description,N.Sequences,N.Proteotypic.Sequences" --intensity-regex "^F:" report.pg.vsn2.tsv
+#python run.py --id-columns "Protein IDs" --intensity-regex "LFQ " proteinGroups.txt proteinGroups.vsn.txt
 """Run the Python VSN2 implementation on selected columns of any matrix.
 Requirements:
-    numpy, pandas, scipy, and vsn2.py in the same directory or import path.
+    numpy, pandas, scipy, and vsn.py in the same directory or import path.
 """
 import argparse
 import re
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import vsn2
+import vsn
 
 
 def split_column_arguments(values):
@@ -107,7 +107,7 @@ def run_vsn2_matrix(
 
     rows_all_missing = np.all(np.isnan(intensity_matrix), axis=1)
 
-    fit = vsn2.vsn_matrix(
+    fit = vsn.vsn_matrix(
         intensity_matrix,
         lts_quantile=lts_quantile,
         subsample=subsample,

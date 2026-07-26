@@ -1,3 +1,4 @@
+#curl -o proteinGroups.txt "https://zenodo.org/records/14557756/files/proteinGroups.txt?download=1"
 #Rscript run.r proteinGroups.txt LFQ
 #install.packages(c("BiocManager"),repos="http://cran.us.r-project.org",lib=.libPaths())
 #BiocManager::install(c("vsn"))

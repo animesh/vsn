@@ -1,6 +1,6 @@
 #python run_and_compare.py "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsv" "L:\promec\TIMSTOF\LARS\2026\260518_Sonali\DIANNv2P2.63.260612_140833.64.highacc\report.pg_matrix.tsvLFQvsn0.250.5Rem20Groups.txtLFQvsnF..promec.TIMSTOF.LARS.2026.260518_Sonali.260518_Sonali_CorTestBH.csv" --python-output "python_vsn_matched_samples.tsv"
 """Generate Python VSN2 values and compare them with an R VSN output.
-Keep this file beside run.py, compare.py, and vsn2.py.
+Keep this file beside run.py, compare.py, and vsn.py.
 """
 
 import argparse

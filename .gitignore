@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Package builds
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+.venv-*/
+venv/
+env/
+
+# Generated normalization outputs
+*.vsn.txt
+*.vsn.tsv
+*.vsn.csv
+*.vsn2_parameters.csv
+vsn_comparison_summary.tsv
+vsn_comparison_by_sample.tsv
+vsn_differences.tsv
+
+# Simulation outputs
+vsn_simulation_results/
+
+# Downloaded proteomics datasets
+proteinGroups.txt
+proteinGroups*.txt
+report*.tsv
+
+# IDE and operating system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+~$*
+
+# Quarto files
+/.quarto/
+**/*.quarto_ipynb
+
